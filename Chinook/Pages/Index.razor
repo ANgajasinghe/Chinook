@@ -2,11 +2,29 @@
 @attribute [Authorize]
 
 @using Chinook.Models
-@using Microsoft.EntityFrameworkCore
+@using Chinook.Services
+@using System.Security.Claims
+@using Chinook.States
+@inject ArtistService ArtistService;
+@inject PlaylistState PlaylistState;
+@inject PlaylistService PlaylistService;
 
 <PageTitle>Index</PageTitle>
 
-<h1>Artists</h1>
+<div class="row">
+    <div class="col-8">
+        <h1>Artists</h1>
+    </div>
+
+    <div class="col-4">
+        <div class="input-group mb-3">
+            <input type="text" class="form-control" @bind="name" placeholder="Artist Name" aria-label="Recipient's username" aria-describedby="basic-addon2">
+            <div class="input-group-append">
+                <button class="btn btn-outline-secondary" @onclick="SearchArtistByName" type="button">Search</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 @if (Artists == null)
 {
@@ -22,7 +40,7 @@ else
             </tr>
         </thead>
         <tbody>
-            @foreach (var artist in Artists)
+            @foreach (var artist in ArtistsList)
             {
                 <tr>
                     <td><a href="Artist/@artist.ArtistId">@artist.Name</a></td>
@@ -34,25 +52,52 @@ else
 }
 
 @code {
+    [CascadingParameter] private Task<AuthenticationState> authenticationState { get; set; }
     private List<Artist> Artists;
-    [Inject] IDbContextFactory<ChinookContext> DbFactory { get; set; }
+    private List<Artist> ArtistsList;
+    private string _currentUserId;
+    private string name = string.Empty;
 
     protected override async Task OnInitializedAsync() {
         await InvokeAsync(StateHasChanged);
+        _currentUserId = await GetUserId();
+        await InvokePlayListAsync();
         Artists = await GetArtists();
+        ArtistsList = Artists;
     }
 
-    public async Task<List<Artist>> GetArtists()
-    {   
-        var dbContext = await DbFactory.CreateDbContextAsync();
-        var users = dbContext.Users.Include(a => a.UserPlaylists).ToList();
-        
-        return dbContext.Artists.ToList();
-    }
 
-    public async Task<List<Album>> GetAlbumsForArtist(int artistId)
+    private async Task<List<Artist>> GetArtists()
     {
-        var dbContext = await DbFactory.CreateDbContextAsync();
-        return dbContext.Albums.Where(a => a.ArtistId == artistId).ToList();
+        // var users = dbContext.Users.Include(a => a.UserPlaylists).ToList();
+        
+        return await ArtistService.GetArtistsAsync();
     }
+    
+    private async Task InvokePlayListAsync()
+    {
+        var playlists = await PlaylistService.GetPlaylistsByUserIdAsync(_currentUserId);
+        PlaylistState.SetPlaylists(playlists);
+        PlaylistState.OnChange += StateHasChanged;
+    }
+    
+    private async Task<string> GetUserId()
+    {
+        var user = (await authenticationState).User;
+        var userId = user.FindFirst(u => u.Type.Contains(ClaimTypes.NameIdentifier))?.Value;
+        return userId;
+    }
+    
+
+    private void SearchArtistByName()
+    {
+        ArtistsList = Artists.Where(x=>x.Name.ToLower().Contains(name.ToLower())).ToList();
+    }
+    
+    // public async Task<List<Album>> GetAlbumsForArtist(int artistId)
+    // {
+    //     return await ArtistService.GetAlbumsByArtistIdAsync(artistId);
+    // }
+    //
+
 }
