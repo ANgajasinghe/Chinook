@@ -38,6 +38,8 @@ else
     app.UseHsts();
 }
 
+app.UseMigrationsEndPoint();
+
 app.UseHttpsRedirection();
 
 app.UseStaticFiles();
