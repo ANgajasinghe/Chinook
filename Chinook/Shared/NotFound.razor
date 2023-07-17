@@ -1,0 +1,35 @@
+﻿<!-- Page to display on invalid URL -->
+
+@page "/notfound"
+@using Chinook.Services
+@inject NavigationManager NavigationManager;
+@inject UserAuthenticationService AuthenticationService;
+
+<div class="container">
+    <div class="row text-center">
+        <div class="col-12 h-25">
+            <img src="images/NotFound.jpg" asp-append-version="true" style="max-width: 50%; max-height: 60%" class="img-responsive center-block" alt="Not Found Image"/>
+        </div>
+    </div>
+    <div class="row text-center">
+        <div class="col-12">
+            <button class="btn btn-success" @onclick="NavigateToHome">@(NavigationText)</button>
+        </div>
+    </div>
+</div>
+
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> authenticationState { get; set; }
+
+    private string? NavigationText { get; set; }
+    
+    protected override Task OnInitializedAsync()
+    {
+        NavigationText = AuthenticationService.IsAuthenticated(authenticationState) ? "Go Back To Home" : "Go Back To Login";
+        return base.OnInitializedAsync();
+    }
+    
+    private void NavigateToHome() =>NavigationManager.NavigateTo("/");
+    
+}
