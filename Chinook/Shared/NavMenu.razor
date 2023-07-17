@@ -21,10 +21,10 @@
         @foreach (var playlist in PlaylistState.Playlists)
         {
             <div class="nav-item px-3">
-                 <NavLink class="nav-link" href="@GetLink(playlist.PlaylistId)">
-                     <i class="bi bi-music-note-list me-3" style="font-size: 1.25em"></i>@playlist.Name
-                 </NavLink>
-             </div>
+                <NavLink class="nav-link" href="@GetLink(playlist.PlaylistId)">
+                    <i class="bi bi-music-note-list me-1" style="font-size: 1.25em"></i>@playlist.Name
+                </NavLink>
+            </div>
         }
 
     </nav>
@@ -34,15 +34,7 @@
     private bool collapseNavMenu = true;
 
     private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
-    // private List<Playlist> Playlists { get; set; } = new()
-    // {
-    //     new Playlist
-    //     {
-    //         Name = "90's Music",
-    //         PlaylistId = 1
-    //     }
-    // };
-
+    
     protected override void OnInitialized()
     {
         PlaylistState.OnChange += StateHasChanged;

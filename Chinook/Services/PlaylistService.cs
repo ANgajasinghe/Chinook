@@ -9,6 +9,7 @@ using Playlist= Chinook.Models.Playlist;
 
 namespace Chinook.Services;
 
+// Service for managing playlists
 public class PlaylistService
 {
     private readonly ChinookContext _context;
@@ -20,14 +21,18 @@ public class PlaylistService
     }
     
     
-    public async Task<List<Playlist>> GetPlaylistsByUserIdAsync(string currentUserId)
-    {
-        return await _context.UserPlaylists.Include(x => x.Playlist)
-            .Where(x => x.UserId == currentUserId && x.Playlist.Name != null).Select(x => x.Playlist).ToListAsync();
-    }
+    public async Task<List<Playlist>> GetPlaylistsByUserIdAsync(string currentUserId) 
+        => await _context.UserPlaylists.Include(x => x.Playlist)
+            .Where(x => x.UserId == currentUserId && x.Playlist.Name != null).Select(x => x.Playlist)
+            .ToListAsync();
     
+    // Check if playlist with the same name already exist for given user
+    public async Task<bool> IsPlayListAlreadyExistAsync(string playlistName, string currentUserId) 
+        => await _context.UserPlaylists.Include(x=>x.Playlist)
+            .AnyAsync(x => x.UserId == currentUserId && x.Playlist.Name == playlistName);
     
-    public async Task<Playlist> CreatePlaylistAsync(string playlistName, string currentUserId,long trackId)
+
+    public async Task CreatePlaylistAsync(string playlistName, string currentUserId,long trackId)
     {
         var track = await _context.Tracks.FirstOrDefaultAsync(x => x.TrackId == trackId);
         
@@ -51,7 +56,6 @@ public class PlaylistService
         await _context.UserPlaylists.AddAsync(userPlaylist);
         await _context.SaveChangesAsync();
         _playlistState.AddPlaylist(userPlaylist.Playlist);
-        return userPlaylist.Playlist;
     }
 
 
@@ -76,7 +80,8 @@ public class PlaylistService
         return playlist;
     }
     
-    public async Task<Track> RemoveTrackFromPlaylistAsync(long playlistId, string currentUserId,long trackId)
+    
+    public async Task RemoveTrackFromPlaylistAsync(long playlistId, string currentUserId,long trackId)
     {
         
         var playlist = await GetPlayListAsync(x=>x.UserId == currentUserId 
@@ -93,11 +98,10 @@ public class PlaylistService
         
         playlist.Tracks.Remove(track);
         await _context.SaveChangesAsync();
-        return track;
         
     }
-
-    public async Task<ClientModelPlayList> GetPlaylistByPlaylistIdAsync(long playlistId,string currentUserId)
+    
+    public async Task<ClientModelPlayList> GetPlaylistByPlaylistIdAsync(long playlistId,string? currentUserId)
     {
         return await _context.Playlists
             .Include(a => a.Tracks)
@@ -109,7 +113,7 @@ public class PlaylistService
                 Name = playlist.Name ?? "-",
                 Tracks = playlist.Tracks.Select(track => new PlaylistTrack
                 {
-                    AlbumTitle = track.Album.Title,
+                    AlbumTitle = track.Album!.Title,
                     ArtistName = track.Album.Artist.Name ?? "-",
                     TrackId = track.TrackId,
                     TrackName = track.Name,
@@ -121,6 +125,7 @@ public class PlaylistService
             .FirstOrDefaultAsync();
     }
     
+    // Favorite and UnFavorite Track 
     public async Task<bool> FavoriteUnFavouriteTrackAsync(long trackId, string currentUserId)
     {
         var track = await _context.Tracks.SingleOrDefaultAsync(a => a.TrackId == trackId);
@@ -146,12 +151,8 @@ public class PlaylistService
         return true;
     }
 
-    private async Task<long> GetPlayListIdAsync()
-    {
-        var lastPlayListId = await _context.Playlists.Select(x => x.PlaylistId).MaxAsync();
-        return lastPlayListId + 1;
-    }
-
+    
+    // Making track as favourite
     private async Task MakeAsFavouriteAsync(Track track,Playlist? playlist,string currentUserId)
     {
         if (playlist == null) // Create new favorite playlist and add track
@@ -179,11 +180,12 @@ public class PlaylistService
             playlist.Tracks.Add(track); // Add track to favorite playlist
         }
     }
-    
-    private static void MakeAsUnFavourite(Track track,Playlist playlist)
-    {
-        playlist.Tracks.Remove(track);
-    }
+   
+    // Making track as unfavourite
+    private static void MakeAsUnFavourite(Track track,Playlist playlist) => playlist.Tracks.Remove(track);
+
+
+    #region Support Methods
 
     private async Task<Playlist?> GetPlayListAsync(Expression<Func<UserPlaylist,bool>> selection)
     {
@@ -194,4 +196,12 @@ public class PlaylistService
             .Select(x=>x.Playlist)
             .FirstOrDefaultAsync();
     }
+    
+    private async Task<long> GetPlayListIdAsync()
+    {
+        var lastPlayListId = await _context.Playlists.Select(x => x.PlaylistId).MaxAsync();
+        return lastPlayListId + 1;
+    }
+
+    #endregion
 }

@@ -1,23 +1,35 @@
 ﻿@page "/playlist/{PlaylistId:long}"
 @attribute [Authorize]
 
-@using System.Security.Claims;
 @using Chinook.Constants
 @using Chinook.Services
 @using Chinook.States
 @inject PlaylistService PlaylistService;
 @inject PlaylistState PlaylistState;
+@inject UserAuthenticationService UserAuthenticationService;
+@inject NavigationManager NavigationManager;
 
-<h1>Playlist <strong>@_playlist.Name</strong></h1>
+<h1>Playlist <strong>@_playlist?.Name</strong></h1>
 
-@if (!string.IsNullOrWhiteSpace(_infoMessage))
+@if (!string.IsNullOrWhiteSpace(_errorMessage))
+{
+    <div class="alert alert-danger fade show">
+        <div class="d-flex align-items-start">
+            <div class="flex-grow-1">
+                @_errorMessage
+            </div>
+            <button type="button" class="btn-close" aria-label="Close" @onclick="CloseMessages"></button>
+        </div>
+    </div>
+}
+else if (!string.IsNullOrWhiteSpace(_infoMessage))
 {
     <div class="alert alert-info fade show">
         <div class="d-flex align-items-start">
             <div class="flex-grow-1">
                 @_infoMessage
             </div>
-            <button type="button" class="btn-close" aria-label="Close" @onclick="CloseInfoMessage"></button>
+            <button type="button" class="btn-close" aria-label="Close" @onclick="CloseMessages"></button>
         </div>
     </div>
 }
@@ -46,7 +58,7 @@ else
                             {
                                 @if (track.IsFavorite)
                                 {
-                                    <a href="#" class="m-1" title="Unark as favorite" @onclick="@(() => UnFavoriteTrack(track.TrackId))" @onclick:preventDefault><i class="bi bi-star-fill"></i></a>
+                                    <a href="#" class="m-1" title="Unmark as favorite" @onclick="@(() => OpenConfirmationDialog(track.TrackName,PlaylistConst.Favorites, _=>UnFavoriteTrack(track.TrackId)))" @onclick:preventDefault><i class="bi bi-star-fill"></i></a>
                                 }
                                 else
                                 {
@@ -55,7 +67,7 @@ else
                                 
                                 if (_playlist.Name != PlaylistConst.Favorites)
                                 {
-                                    <a href="#" class="m-1" title="Remove from this playlist" @onclick="@(() => RemoveTrack(track.TrackId))" @onclick:preventDefault><i class="bi bi-trash"></i></a>
+                                    <a href="#" class="m-1" title="Remove from this playlist" @onclick="@(() => OpenConfirmationDialog(track.TrackName,_playlist.Name, _=>RemoveTrack(track.TrackId)))" @onclick:preventDefault><i class="bi bi-trash"></i></a>
                                 }
                             }
                             
@@ -69,75 +81,143 @@ else
 
 @code {
     [Parameter] public long PlaylistId { get; set; }
-    [CascadingParameter] private Task<AuthenticationState> authenticationState { get; set; }
+    [CascadingParameter] private Task<AuthenticationState>? AuthenticationState { get; set; }
 
-    private ClientModels.Playlist _playlist;
-    private string _currentUserId;
-    private string _infoMessage;
+    private ClientModels.Playlist? _playlist;
+    private string? _currentUserId;
+    private Modal _confirmationModal;
+    private string _infoMessage = null!;
+    private string _errorMessage = null!;
+    private string _confirmationMessage = null!;
+    private Func<long,Task>? _confirmationAction;
 
     protected override async Task OnInitializedAsync()
     {
-        _currentUserId = await GetUserId();
+        _currentUserId = UserAuthenticationService.GetUserId(AuthenticationState);
 
         await InvokeAsync(StateHasChanged);
     }
     
-    
     protected override async Task OnParametersSetAsync()
     {
-        _playlist = await PlaylistService.GetPlaylistByPlaylistIdAsync(PlaylistId, _currentUserId);
-        CloseInfoMessage();
-    }
-
-    private async Task<string> GetUserId()
-    {
-        var user = (await authenticationState).User;
-        var userId = user.FindFirst(u => u.Type.Contains(ClaimTypes.NameIdentifier))?.Value;
-        return userId;
+        CloseMessages();
+        try
+        {
+            _playlist = await PlaylistService.GetPlaylistByPlaylistIdAsync(PlaylistId, _currentUserId);
+            
+            if(_playlist is null)
+                NavigationManager.NavigateTo("/notfound");
+        }
+        catch (Exception e)
+        {
+            _errorMessage = e.Message;
+        }
     }
 
     private async Task FavoriteTrack(long trackId)
     {
-        var track = _playlist.Tracks.FirstOrDefault(t => t.TrackId == trackId);
-        await PlaylistService.FavoriteUnFavouriteTrackAsync(trackId, _currentUserId);
-        PlaylistState.OnChange += StateHasChanged;
-        _infoMessage = $"Track {track.ArtistName} - {track.AlbumTitle} - {track.TrackName} added to playlist {PlaylistConst.Favorites}.";
-        
-        foreach (var playlistTrack in _playlist.Tracks.Where(playlistTrack => playlistTrack.TrackId == trackId))
+        try
         {
-            playlistTrack.IsFavorite = true;
+            var track = _playlist!.Tracks.FirstOrDefault(t => t.TrackId == trackId);
+            await PlaylistService.FavoriteUnFavouriteTrackAsync(trackId, _currentUserId!);
+            PlaylistState.OnChange += StateHasChanged;
+            _infoMessage = $"Track {track.ArtistName} - {track.AlbumTitle} - {track.TrackName} added to playlist {PlaylistConst.Favorites}.";
+        
+            foreach (var playlistTrack in _playlist.Tracks.Where(playlistTrack => playlistTrack.TrackId == trackId))
+            {
+                playlistTrack.IsFavorite = true;
+            }
+        }
+        catch (Exception e)
+        {
+            CloseMessages();
+            _errorMessage = e.Message;
         }
     }
 
     private async Task UnFavoriteTrack(long trackId)
     {
-        var track = _playlist.Tracks.FirstOrDefault(t => t.TrackId == trackId);
-        await PlaylistService.FavoriteUnFavouriteTrackAsync(trackId, _currentUserId);
-        _infoMessage = $"Track {track.ArtistName} - {track.AlbumTitle} - {track.TrackName} removed from playlist {PlaylistConst.Favorites}.";
-
-        _playlist.Tracks.Remove(track);
-
-        if (_playlist.Name != PlaylistConst.Favorites)
+        try
         {
-            track.IsFavorite = false;
-            _playlist.Tracks.Add(track);
-        }
-        
-    }
+            var track = _playlist!.Tracks.FirstOrDefault(t => t.TrackId == trackId);
+            await PlaylistService.FavoriteUnFavouriteTrackAsync(trackId, _currentUserId);
+            _infoMessage = $"Track {track.ArtistName} - {track.AlbumTitle} - {track.TrackName} removed from playlist {PlaylistConst.Favorites}.";
 
+            _playlist.Tracks.Remove(track);
+
+            if (_playlist.Name != PlaylistConst.Favorites)
+            {
+                track.IsFavorite = false;
+                _playlist.Tracks.Add(track);
+            }
+        
+            CleanDelegateAndCloseConfirmation();
+        }
+        catch (Exception e)
+        {
+            CloseMessages();
+            _errorMessage = e.Message;
+        }
+    }
+    
     private async Task RemoveTrack(long trackId)
     {
-        var track = _playlist.Tracks.FirstOrDefault(t => t.TrackId == trackId);
-        await PlaylistService.RemoveTrackFromPlaylistAsync(PlaylistId,_currentUserId, trackId);
-        _infoMessage = $"Track {track.ArtistName} - {track.AlbumTitle} - {track.TrackName} removed from playlist {_playlist.Name}.";
-        _playlist.Tracks.Remove(track);
-        CloseInfoMessage();
-
+        try
+        {
+            CloseMessages();
+            var track = _playlist!.Tracks.FirstOrDefault(t => t.TrackId == trackId);
+            await PlaylistService.RemoveTrackFromPlaylistAsync(PlaylistId,_currentUserId!, trackId);
+            _infoMessage = $"Track {track!.ArtistName} - {track.AlbumTitle} - {track.TrackName} removed from playlist {_playlist.Name}.";
+            _playlist.Tracks.Remove(track);
+            CleanDelegateAndCloseConfirmation();
+        }
+        catch (Exception e)
+        {
+            CloseMessages();
+            _errorMessage = e.Message;
+        }
     }
 
-    private void CloseInfoMessage()
+
+    private void OpenConfirmationDialog(string trackName,string playListName,Func<long,Task> action)
+    {
+        _confirmationAction = action;
+        _confirmationMessage = $"Are you sure you want to remove {trackName} from playlist {playListName}?";
+        _confirmationModal.Open();
+    }
+
+    private void CloseConfirmationDialog()
+    {
+        CleanDelegateAndCloseConfirmation();
+        _confirmationModal.Close();
+    }
+    
+    private void CleanDelegateAndCloseConfirmation()
+    {
+        _confirmationAction = null;
+        _confirmationModal.Close();
+    }
+    
+    private void CloseMessages()
     {
         _infoMessage = "";
+        _errorMessage = "";
     }
 
+    private void TriggerAction() => _confirmationAction?.Invoke(0);
+
+    // private void CloseInfoMessage() => _infoMessage = "";
 }
+
+<Modal @ref="_confirmationModal" ShowCloseButton="false">
+    <Title>
+        <b> Please confirm your action</b>
+    </Title>
+    <Body>
+        @_confirmationMessage
+    </Body>
+    <Footer>
+        <button class="btn btn-danger" @onclick="CloseConfirmationDialog">No</button>
+        <button class="btn btn-success" @onclick="TriggerAction">Yes</button>
+    </Footer>
+</Modal>
